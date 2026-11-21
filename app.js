@@ -10,6 +10,37 @@ const store = {
 const bytesToB64 = s => { const b = new TextEncoder().encode(s); let t = ''; b.forEach(x => t += String.fromCharCode(x)); return btoa(t); };
 const b64ToStr = s => new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0)));
 
+/* ---------- Kas grupları ve renkleri ---------- */
+const MUSCLES = {
+  'Göğüs': '#ff5468', 'Bacak ve kalça': '#ff8a3d', 'Omuz': '#ffd23f', 'Arka kol': '#8be04e',
+  'Ön bacak': '#2dd4b4', 'Karın': '#3cc8f0', 'Sırt': '#5a8cff', 'Arka bacak': '#a47cff',
+  'Ön kol': '#e46bff', 'Tüm vücut': '#ff6fae', 'Kardiyo': '#94a3b8'
+};
+const hslHex = (h, s, l) => {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+};
+function mcolor(m) {
+  if (MUSCLES[m]) return MUSCLES[m];
+  if (!m) return MUSCLES['Kardiyo'];
+  let h = 0; for (const c of m) h = (h * 31 + c.charCodeAt(0)) % 360;
+  return hslHex(h, 70, 62);
+}
+function mstyle(m) {
+  const c = mcolor(m), [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+  return `--mc:${c};--mcs:rgba(${r},${g},${b},.16);--mcm:rgba(${r},${g},${b},.4)`;
+}
+const mchip = m => m ? `<span class="mchip" style="${mstyle(m)}"><i></i>${esc(m)}</span>` : '';
+const INFER = [
+  [/leg press/i, 'Bacak ve kalça'], [/leg curl|hamstring/i, 'Arka bacak'], [/leg extension|quad/i, 'Ön bacak'],
+  [/tricep/i, 'Arka kol'], [/bicep|preacher|curl/i, 'Ön kol'], [/chest|bench|push-?up|fly/i, 'Göğüs'],
+  [/pulldown|pull-?up|row/i, 'Sırt'], [/shoulder|overhead|lateral raise/i, 'Omuz'],
+  [/crunch|abdominal|plank/i, 'Karın'], [/farmer/i, 'Tüm vücut'], [/ko[sş]u|[ıiI]s[ıi]nma|kardiyo|treadmill|bike/i, 'Kardiyo']
+];
+const inferMuscle = name => (INFER.find(([re]) => re.test(name)) || [, ''])[1];
+
 /* ---------- Örnek program ---------- */
 const SAMPLE = () => ({
   name: 'Programım',
@@ -31,6 +62,10 @@ const SAMPLE = () => ({
 });
 
 let prog = store.get('prog', null) || SAMPLE();
+if (prog.days.some(d => d.ex.some(e => e.muscle == null))) {
+  prog.days.forEach(d => d.ex.forEach(e => { if (e.muscle == null) e.muscle = inferMuscle(e.name); }));
+  store.set('prog', prog);
+}
 let done = store.get('done:' + today(), {});
 let edit = store.get('edit', false);
 const saveProg = () => store.set('prog', prog);
@@ -113,6 +148,7 @@ function normalize(p) {
         reps: String(e.reps ?? '10').slice(0, 20),
         rest: Math.min(600, Math.max(0, parseInt(e.rest) || 0)),
         note: String(e.note || '').slice(0, 500),
+        muscle: e.muscle == null ? inferMuscle(String(e.name || '')) : String(e.muscle).slice(0, 30),
         media: mediaOf(e)
       }))
     }))
@@ -120,7 +156,7 @@ function normalize(p) {
 }
 const exportable = () => ({
   name: prog.name,
-  days: prog.days.map(d => ({ name: d.name, ex: d.ex.map(e => ({ name: e.name, sets: e.sets, reps: e.reps, rest: e.rest, note: e.note, media: e.media && e.media.type === 'url' ? e.media.value : null })) }))
+  days: prog.days.map(d => ({ name: d.name, ex: d.ex.map(e => ({ name: e.name, sets: e.sets, reps: e.reps, rest: e.rest, note: e.note, muscle: e.muscle || '', media: e.media && e.media.type === 'url' ? e.media.value : null })) }))
 });
 async function replaceProgram(np) {
   for (const d of prog.days) for (const e of d.ex) if (e.media?.type === 'idb') await delMedia(e.media.value);
@@ -132,7 +168,13 @@ function home() {
   setBar(prog.name, null, editBtn());
   const list = prog.days.map((d, i) => {
     const s = dayStats(d);
-    return `<div class="row"><a class="card grow" href="#/day/${d.id}"><div><b>${esc(d.name)}</b><small>${d.ex.length} hareket${s.t ? ` · ${s.n}/${s.t} set` : ''}</small></div><span class="chev">›</span></a>${edit ? `<div class="tools"><a class="chip" href="#/edit-day/${d.id}">Adı değiştir</a><button class="chip" data-act="mvday" data-i="${i}" data-d="-1">↑</button><button class="chip" data-act="mvday" data-i="${i}" data-d="1">↓</button><button class="chip del" data-act="delday" data-id="${d.id}">Sil</button></div>` : ''}</div>`;
+    const pct = s.t ? Math.round(s.n / s.t * 100) : 0;
+    const ms = [...new Set(d.ex.map(e => e.muscle).filter(m => m && m !== 'Kardiyo'))];
+    return `<div class="row"><a class="card day" href="#/day/${d.id}">
+      <div class="dayhead"><b>${esc(d.name)}</b><span class="chev">›</span></div>
+      <div class="chips">${ms.map(mchip).join('')}</div>
+      <div class="meta"><span>${d.ex.length} hareket</span>${s.t ? `<span>${s.n}/${s.t} set</span>` : ''}</div>
+      <div class="bar"><i style="width:${pct}%"></i></div></a>${edit ? `<div class="tools"><a class="chip" href="#/edit-day/${d.id}">Adı değiştir</a><button class="chip" data-act="mvday" data-i="${i}" data-d="-1">↑</button><button class="chip" data-act="mvday" data-i="${i}" data-d="1">↓</button><button class="chip del" data-act="delday" data-id="${d.id}">Sil</button></div>` : ''}</div>`;
   }).join('');
   app.innerHTML = (list || '<p class="empty">Henüz gün yok.</p>')
     + (edit ? `<button class="btn" data-act="addday">+ Gün ekle</button><a class="btn sec" href="#/edit-day/_prog">Program adını değiştir</a>` : '')
@@ -143,11 +185,14 @@ function home() {
 function dayView(id) {
   const d = findDay(id); if (!d) return go('/');
   setBar(d.name, '#/', editBtn());
+  const s = dayStats(d), pct = s.t ? Math.round(s.n / s.t * 100) : 0;
+  const ms = [...new Set(d.ex.map(e => e.muscle).filter(Boolean))];
+  const head = d.ex.length ? `<section class="summary"><div class="sumtop"><b>${s.n}<small> / ${s.t} set</small></b><span>%${pct}</span></div><div class="bar big"><i style="width:${pct}%"></i></div><div class="chips">${ms.map(mchip).join('')}</div></section>` : '';
   const list = d.ex.map((e, i) => {
-    const n = Math.min(done[e.id] || 0, e.sets);
-    return `<div class="row"><a class="card grow" href="#/ex/${d.id}/${i}"><div><b>${esc(e.name)}</b><small>${e.sets} set × ${esc(e.reps)}${e.rest ? ` · ${e.rest} sn dinlenme` : ''}</small></div><span class="count ${n >= e.sets ? 'full' : ''}">${n}/${e.sets}</span></a>${edit ? `<div class="tools"><a class="chip" href="#/edit-ex/${d.id}/${i}">Düzenle</a><button class="chip" data-act="mvex" data-did="${d.id}" data-i="${i}" data-d="-1">↑</button><button class="chip" data-act="mvex" data-did="${d.id}" data-i="${i}" data-d="1">↓</button><button class="chip del" data-act="delex" data-did="${d.id}" data-i="${i}">Sil</button></div>` : ''}</div>`;
+    const n = Math.min(done[e.id] || 0, e.sets), full = n >= e.sets;
+    return `<div class="row"><a class="card ex ${full ? 'full' : ''}" style="${mstyle(e.muscle)}" href="#/ex/${d.id}/${i}"><span class="num">${full ? '✓' : i + 1}</span><div><b>${esc(e.name)}</b><small>${e.muscle ? `<em>${esc(e.muscle)}</em> · ` : ''}${e.sets} set × ${esc(e.reps)}</small></div><span class="count">${n}/${e.sets}</span></a>${edit ? `<div class="tools"><a class="chip" href="#/edit-ex/${d.id}/${i}">Düzenle</a><button class="chip" data-act="mvex" data-did="${d.id}" data-i="${i}" data-d="-1">↑</button><button class="chip" data-act="mvex" data-did="${d.id}" data-i="${i}" data-d="1">↓</button><button class="chip del" data-act="delex" data-did="${d.id}" data-i="${i}">Sil</button></div>` : ''}</div>`;
   }).join('');
-  app.innerHTML = (list || '<p class="empty">Bu günde hareket yok.</p>')
+  app.innerHTML = head + (list || '<p class="empty">Bu günde hareket yok.</p>')
     + (edit ? `<a class="btn" href="#/edit-ex/${d.id}/new">+ Hareket ekle</a>` : '');
 }
 
@@ -156,15 +201,16 @@ function exView(did, i) {
   const d = findDay(did); if (!d) return go('/');
   i = +i; const e = d.ex[i]; if (!e) return go('/day/' + did);
   cur = { did, i };
-  setBar(`${e.name}`, '#/day/' + did, `<span class="mut">${i + 1}/${d.ex.length}</span>`);
+  setBar(d.name, '#/day/' + did, `<span class="pos">${i + 1} / ${d.ex.length}</span>`);
+  document.body.classList.add('has-nav');
   const n = done[e.id] || 0;
-  app.innerHTML = `${mediaHTML(e.media)}
-  <h2>${esc(e.name)}</h2>
-  <div class="big"><span>${e.sets}</span> set × <span>${esc(e.reps)}</span></div>
-  ${e.rest ? `<div class="mut">Setler arası dinlenme: ${e.rest} sn</div>` : ''}
-  ${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}
-  <div class="sets">${Array.from({ length: e.sets }, (_, k) => `<button class="set ${k < n ? 'on' : ''}" data-act="set" data-k="${k}">${k + 1}</button>`).join('')}</div>
-  <div class="nav">${i > 0 ? `<a class="btn sec" href="#/ex/${did}/${i - 1}">‹ Önceki</a>` : '<span></span>'}${i < d.ex.length - 1 ? `<a class="btn" href="#/ex/${did}/${i + 1}">Sonraki ›</a>` : `<a class="btn" href="#/day/${did}">Bitir ✓</a>`}</div>`;
+  app.innerHTML = `<div class="stage" style="${mstyle(e.muscle)}">
+    <div class="mediawrap">${mediaHTML(e.media)}</div>
+    <div class="head">${mchip(e.muscle)}<h2>${esc(e.name)}</h2></div>
+    <div class="stats"><div><b>${e.sets}</b><span>SET</span></div><div><b>${esc(e.reps)}</b><span>TEKRAR</span></div>${e.rest ? `<div><b>${e.rest}<small>sn</small></b><span>DİNLENME</span></div>` : ''}</div>
+    ${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}
+    <div class="sets">${Array.from({ length: e.sets }, (_, k) => `<button class="set ${k < n ? 'on' : ''}" data-act="set" data-k="${k}" aria-label="Set ${k + 1}"><span>${k + 1}</span></button>`).join('')}</div></div>
+  <nav class="bottomnav">${i > 0 ? `<a class="btn sec" href="#/ex/${did}/${i - 1}">‹ Önceki</a>` : '<span></span>'}${i < d.ex.length - 1 ? `<a class="btn" href="#/ex/${did}/${i + 1}">Sonraki ›</a>` : `<a class="btn" href="#/day/${did}">Bitir ✓</a>`}</nav>`;
   hydrate(); wake();
 }
 
@@ -186,11 +232,13 @@ function editDay(id) {
 function editEx(did, idx) {
   const d = findDay(did); if (!d) return go('/');
   const isNew = idx === 'new';
-  const e = isNew ? { id: uid(), name: '', sets: 3, reps: '10', rest: 60, note: '', media: null } : d.ex[+idx];
+  const e = isNew ? { id: uid(), name: '', sets: 3, reps: '10', rest: 60, note: '', muscle: '', media: null } : d.ex[+idx];
   if (!e) return go('/day/' + did);
   setBar(isNew ? 'Hareket ekle' : 'Hareketi düzenle', '#/day/' + did);
   app.innerHTML = `<form class="form">
     <label>Hareket adı<input name="name" value="${esc(e.name)}" required></label>
+    <label>Kas grubu<input name="muscle" list="muscles" value="${esc(e.muscle || '')}" placeholder="Göğüs, Sırt, Omuz…"></label>
+    <datalist id="muscles">${Object.keys(MUSCLES).map(m => `<option value="${m}">`).join('')}</datalist>
     <div class="two">
       <label>Set<input name="sets" type="number" min="1" max="20" inputmode="numeric" value="${e.sets}" required></label>
       <label>Tekrar<input name="reps" value="${esc(e.reps)}" required placeholder="10 / 8-12 / 30 sn"></label>
@@ -205,6 +253,7 @@ function editEx(did, idx) {
     ev.preventDefault();
     const f = new FormData(ev.target);
     e.name = String(f.get('name')).trim();
+    e.muscle = String(f.get('muscle')).trim().slice(0, 30);
     e.sets = Math.min(20, Math.max(1, parseInt(f.get('sets')) || 1));
     e.reps = String(f.get('reps')).trim();
     e.rest = Math.min(600, Math.max(0, parseInt(f.get('rest')) || 0));
@@ -342,6 +391,7 @@ document.addEventListener('click', async ev => {
 const VIEWS = { home, day: p => dayView(p[1]), ex: p => exView(p[1], p[2]), 'edit-day': p => editDay(p[1]), 'edit-ex': p => editEx(p[1], p[2]), share: shareView, videos: bulkView };
 function route() {
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+  document.body.classList.remove('has-nav');
   if (p[0] !== 'ex' && wl) { try { wl.release(); } catch { } wl = null; }
   (VIEWS[p[0] || 'home'] || home)(p);
   window.scrollTo(0, 0);
