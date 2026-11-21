@@ -1,6 +1,6 @@
 {
-  "name": "Antrenman",
-  "short_name": "Antrenman",
+  "name": "Workout",
+  "short_name": "Workout",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
