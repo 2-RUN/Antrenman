@@ -1,2 +1,6 @@
 .impeccable/
 .DS_Store
+program.json
+*.mp4
+*.mov
+img/

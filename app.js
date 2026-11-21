@@ -136,6 +136,7 @@ function home() {
   }).join('');
   app.innerHTML = (list || '<p class="empty">Henüz gün yok.</p>')
     + (edit ? `<button class="btn" data-act="addday">+ Gün ekle</button><a class="btn sec" href="#/edit-day/_prog">Program adını değiştir</a>` : '')
+    + `<a class="card ghost" href="#/videos"><div><b>Videoları yükle</b><small>Telefondaki videolar, internetsiz oynar</small></div><span class="chev">›</span></a>`
     + `<a class="card ghost" href="#/share"><div><b>Paylaş / İçe aktar</b><small>Antrenörden gelen programı buraya yükle</small></div><span class="chev">›</span></a>`;
 }
 
@@ -238,6 +239,37 @@ function shareView() {
   <section class="panel"><button class="btn danger" data-act="reset">Örnek programa dön</button></section>`;
 }
 
+/* ---------- Toplu video yükleme (sadece bu cihazda saklanır) ---------- */
+const plain = s => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+function matchEx(fileName) {
+  const f = plain(fileName.replace(/\.[^.]+$/, '').replace(/^\s*\d+\s*[-_.)]*\s*/, ''));
+  if (f.length < 3) return null;
+  const all = prog.days.flatMap(d => d.ex);
+  return all.find(e => plain(e.name) === f) || all.find(e => { const n = plain(e.name); return n.includes(f) || f.includes(n); }) || null;
+}
+function bulkView() {
+  setBar('Videoları yükle', '#/');
+  app.innerHTML = `<section class="panel"><h3>Videoları toplu yükle</h3>
+    <p class="mut">Dosya adındaki hareket adına göre eşleşir (örn. "01 - Leg Press.mp4"). Videolar sadece bu telefonda saklanır ve internetsiz oynar. Hareketin mevcut videosunun/bağlantısının yerine geçer.</p>
+    <label>Video dosyaları<input id="bulk" type="file" accept="video/*" multiple></label>
+    <div id="bulkout" class="mut"></div></section>`;
+  $('#bulk').onchange = async ev => {
+    const out = $('#bulkout'), files = [...ev.target.files], lines = [];
+    let ok = 0;
+    for (const f of files) {
+      const e = matchEx(f.name);
+      if (!e) lines.push(`⚠️ Eşleşmedi: ${esc(f.name)}`);
+      else {
+        try { await putMedia(e.id, f); e.media = { type: 'idb', value: e.id }; ok++; lines.push(`✅ ${esc(e.name)}`); }
+        catch { lines.push(`❌ Kaydedilemedi: ${esc(f.name)} (depolama dolu olabilir)`); }
+      }
+      out.innerHTML = lines.join('<br>') + `<br>${ok}/${files.length}…`;
+    }
+    saveProg();
+    out.innerHTML = lines.join('<br>') + `<br><b>${ok}/${files.length} video yüklendi.</b>`;
+  };
+}
+
 /* ---------- Dinlenme sayacı, ekran uyanık, ses ---------- */
 let restEnd = 0, restTimer = null, ac = null, wl = null;
 const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
@@ -307,7 +339,7 @@ document.addEventListener('click', async ev => {
 });
 
 /* ---------- Yönlendirme ---------- */
-const VIEWS = { home, day: p => dayView(p[1]), ex: p => exView(p[1], p[2]), 'edit-day': p => editDay(p[1]), 'edit-ex': p => editEx(p[1], p[2]), share: shareView };
+const VIEWS = { home, day: p => dayView(p[1]), ex: p => exView(p[1], p[2]), 'edit-day': p => editDay(p[1]), 'edit-ex': p => editEx(p[1], p[2]), share: shareView, videos: bulkView };
 function route() {
   const p = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   if (p[0] !== 'ex' && wl) { try { wl.release(); } catch { } wl = null; }
