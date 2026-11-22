@@ -106,3 +106,8 @@ body.has-nav #rest{bottom:auto;top:calc(env(safe-area-inset-top) + 68px)}
 #rest.go{background:var(--ok);color:#06210f}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+.kg{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:10px 14px;margin:12px 0}
+.kg span{font-size:14px;color:var(--mut)}
+.kg b{color:var(--mc);font-size:16px}
+.kg input{width:104px;text-align:center;font-size:20px;font-weight:700;padding:8px;border-radius:12px;border:1px solid var(--mc);background:transparent;color:inherit}

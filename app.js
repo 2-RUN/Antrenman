@@ -9,6 +9,8 @@ const store = {
 };
 const bytesToB64 = s => { const b = new TextEncoder().encode(s); let t = ''; b.forEach(x => t += String.fromCharCode(x)); return btoa(t); };
 const b64ToStr = s => new TextDecoder().decode(Uint8Array.from(atob(s), c => c.charCodeAt(0)));
+// iPhone uygulaması (WKWebView) içindeyken native tarafa mesaj gönderir; tarayıcıda hiçbir şey yapmaz.
+const nativeMsg = (type, extra) => { try { window.webkit?.messageHandlers?.native?.postMessage({ type, ...extra }); } catch { } };
 
 /* ---------- Kas grupları ve renkleri ---------- */
 const MUSCLES = {
@@ -70,6 +72,10 @@ let done = store.get('done:' + today(), {});
 let edit = store.get('edit', false);
 const saveProg = () => store.set('prog', prog);
 const saveDone = () => store.set('done:' + today(), done);
+// Kilo geçmişi: hareket adına göre {tarih: kg}; program yeniden içe aktarılsa da korunur.
+const wt = store.get('wt', {});
+const lastKg = name => { const h = wt[name] || {}, t = today(); const ds = Object.keys(h).filter(d => d < t).sort(); return ds.length ? { d: ds[ds.length - 1], kg: h[ds[ds.length - 1]] } : null; };
+const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
 
 /* ---------- Telefondan yüklenen medya (IndexedDB) ---------- */
 const dbp = new Promise((res, rej) => {
@@ -209,6 +215,7 @@ function exView(did, i) {
     <div class="head">${mchip(e.muscle)}<h2>${esc(e.name)}</h2></div>
     <div class="stats"><div><b>${e.sets}</b><span>SET</span></div><div><b>${esc(e.reps)}</b><span>TEKRAR</span></div>${e.rest ? `<div><b>${e.rest}<small>sn</small></b><span>DİNLENME</span></div>` : ''}</div>
     ${e.note ? `<p class="note">${esc(e.note)}</p>` : ''}
+    <label class="kg"><span>${(() => { const l = lastKg(e.name); return l ? `Son: <b>${esc(l.kg)} kg</b> · ${fmtDate(l.d)}` : 'İlk kez — kaç kg?'; })()}</span><input id="kg" type="text" inputmode="decimal" placeholder="Bugün kg" value="${esc((wt[e.name] || {})[today()] ?? '')}"></label>
     <div class="sets">${Array.from({ length: e.sets }, (_, k) => `<button class="set ${k < n ? 'on' : ''}" data-act="set" data-k="${k}" aria-label="Set ${k + 1}"><span>${k + 1}</span></button>`).join('')}</div></div>
   <nav class="bottomnav">${i > 0 ? `<a class="btn sec" href="#/ex/${did}/${i - 1}">‹ Önceki</a>` : '<span></span>'}${i < d.ex.length - 1 ? `<a class="btn" href="#/ex/${did}/${i + 1}">Sonraki ›</a>` : `<a class="btn" href="#/day/${did}">Bitir ✓</a>`}</nav>`;
   hydrate(); wake();
@@ -329,6 +336,7 @@ function startRest(sec) {
   if (!sec) return;
   try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch { }
   restEnd = Date.now() + sec * 1000;
+  nativeMsg('rest', { seconds: sec });
   const el = $('#rest'); el.hidden = false; el.className = '';
   el.innerHTML = `<span>Dinlenme</span><b id="rt"></b><button data-act="plus">+15</button><button data-act="skip">Geç</button>`;
   clearInterval(restTimer); restTimer = setInterval(tick, 250); tick();
@@ -338,7 +346,7 @@ function tick() {
   if (left > 0) { const t = $('#rt'); if (t) t.textContent = fmt(left); return; }
   clearInterval(restTimer); restTimer = null;
   el.className = 'go'; el.innerHTML = `<span>Hazır! Sıradaki sete 💪</span><button data-act="skip">Tamam</button>`;
-  beep(); try { navigator.vibrate?.([250, 100, 250]); } catch { }
+  beep(); nativeMsg('haptic'); try { navigator.vibrate?.([250, 100, 250]); } catch { }
   setTimeout(() => { if (!restTimer && Date.now() >= restEnd) el.hidden = true; }, 5000);
 }
 async function wake() { try { if ('wakeLock' in navigator && !wl) { wl = await navigator.wakeLock.request('screen'); wl.onrelease = () => { wl = null; }; } } catch { } }
@@ -346,6 +354,13 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 
 /* ---------- Tıklama işlemleri ---------- */
 const swap = (a, i, d) => { const j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j], a[i]]; };
+document.addEventListener('input', ev => {
+  if (ev.target.id !== 'kg' || !cur) return;
+  const e = findDay(cur.did)?.ex[cur.i]; if (!e) return;
+  const v = ev.target.value.replace(',', '.').trim(), h = wt[e.name] || (wt[e.name] = {});
+  if (v) h[today()] = v; else delete h[today()];
+  store.set('wt', wt);
+});
 document.addEventListener('click', async ev => {
   const b = ev.target.closest('[data-act]'); if (!b) return;
   const a = b.dataset.act, D = b.dataset;
@@ -367,10 +382,11 @@ document.addEventListener('click', async ev => {
     saveDone();
     document.querySelectorAll('.set').forEach((s, idx) => s.classList.toggle('on', idx < done[e.id]));
   }
-  else if (a === 'skip') { clearInterval(restTimer); restTimer = null; restEnd = 0; $('#rest').hidden = true; }
-  else if (a === 'plus') { restEnd += 15000; if (!restTimer) startRest(15); tick(); }
+  else if (a === 'skip') { clearInterval(restTimer); restTimer = null; restEnd = 0; $('#rest').hidden = true; nativeMsg('cancelRest'); }
+  else if (a === 'plus') { restEnd += 15000; if (!restTimer) startRest(15); else nativeMsg('rest', { seconds: (restEnd - Date.now()) / 1000 }); tick(); }
   else if (a === 'sharelink') {
-    const link = location.origin + location.pathname + '#import=' + bytesToB64(JSON.stringify(exportable()));
+    const base = location.protocol.startsWith('http') ? location.origin + location.pathname : 'https://2-run.github.io/Antrenman/';
+    const link = base + '#import=' + bytesToB64(JSON.stringify(exportable()));
     try { if (navigator.share) { await navigator.share({ title: prog.name, text: 'Antrenman programı', url: link }); return; } } catch { return; }
     try { await navigator.clipboard.writeText(link); alert('Bağlantı kopyalandı.'); } catch { prompt('Bağlantıyı kopyala:', link); }
   }
