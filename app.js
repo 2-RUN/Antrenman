@@ -394,8 +394,13 @@ document.addEventListener('click', async ev => {
   else if (a === 'import') {
     let t = $('#imp').value.trim(); if (!t) return;
     try {
+      let add = false;
+      const j = t.indexOf('#add='); if (j >= 0) { t = t.slice(j + 5); add = true; }
       const i = t.indexOf('#import='); if (i >= 0) t = t.slice(i + 8);
-      const np = normalize(t.startsWith('{') ? JSON.parse(t) : JSON.parse(b64ToStr(decodeURIComponent(t))));
+      const raw = t.startsWith('{') ? JSON.parse(t) : JSON.parse(b64ToStr(decodeURIComponent(t)));
+      if (raw.append) add = true;
+      const np = normalize(raw);
+      if (add) { prog.days.push(...np.days); saveProg(); alert(np.days.length + ' gün programına eklendi.'); return go('/'); }
       if (!confirm('Mevcut programın yerine bu program yüklensin mi?')) return;
       await replaceProgram(np); alert('Program yüklendi.'); go('/');
     } catch { alert('Program okunamadı. Bağlantı veya metin eksik/bozuk olabilir.'); }
@@ -415,6 +420,15 @@ function route() {
 window.addEventListener('hashchange', route);
 
 (async function boot() {
+  if (location.hash.startsWith('#add=')) {
+    try {
+      const np = normalize(JSON.parse(b64ToStr(decodeURIComponent(location.hash.slice(5)))));
+      const n = np.days.reduce((a, d) => a + d.ex.length, 0);
+      if (confirm(`${np.days.length} gün, ${n} hareket programına eklensin mi?\nMevcut programın korunur.`)) { prog.days.push(...np.days); saveProg(); }
+    } catch { alert('Gelen bağlantı okunamadı.'); }
+    history.replaceState(null, '', location.pathname);
+    location.hash = '#/';
+  }
   if (location.hash.startsWith('#import=')) {
     try {
       const np = normalize(JSON.parse(b64ToStr(decodeURIComponent(location.hash.slice(8)))));
