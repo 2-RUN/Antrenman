@@ -435,7 +435,28 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 
+// Yalnızca iPhone uygulamasında: pakete konmuş seed/ klasörü varsa (özel program + videolar) bir kez uygular.
+async function seedNative() {
+  const have = store.get('seedv', 0);
+  if (location.protocol !== 'workout:') return;
+  try {
+    const r = await fetch('seed/seed.json'); if (!r.ok) return;
+    const seed = await r.json(), ver = seed.version || 1;
+    if (have >= ver) return;
+    if (have < 1) {
+      if (!store.get('prog', null)) prog = normalize(seed.program); else await applySwap(seed.swap || {});
+      for (const d of prog.days) for (const e of d.ex) {
+        const f = seed.videos?.[e.name];
+        if (f && e.media?.type !== 'idb') { const b = await (await fetch(f)).blob(); await putMedia(e.id, b); e.media = { type: 'idb', value: e.id }; }
+      }
+    }
+    if (seed.reps) for (const d of prog.days) for (const e of d.ex) if (seed.reps[e.name]) e.reps = seed.reps[e.name];
+    saveProg(); store.set('seedv', ver);
+  } catch { }
+}
+
 (async function boot() {
+  await seedNative();
   if (location.hash.startsWith('#add=')) {
     try {
       const np = normalize(JSON.parse(b64ToStr(decodeURIComponent(location.hash.slice(5)))));
