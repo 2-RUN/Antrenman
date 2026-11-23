@@ -142,6 +142,21 @@ function mediaOf(e) {
   const u = typeof m === 'string' ? m : (m && m.type === 'url' ? m.value : null);
   return u && /^https?:\/\//i.test(u) ? { type: 'url', value: u } : null;
 }
+// {swap:{"Hareket adı":[yeni hareketler]}} — programdaki o isimli hareketi, yenileriyle değiştirir (diğer hareket ve videolar korunur).
+async function applySwap(map) {
+  let n = 0;
+  for (const d of prog.days) {
+    const out = [];
+    for (const e of d.ex) {
+      const rep = map[e.name];
+      if (!rep) { out.push(e); continue; }
+      if (e.media?.type === 'idb') await delMedia(e.media.value);
+      out.push(...normalize({ days: [{ ex: rep }] }).days[0].ex); n++;
+    }
+    d.ex = out;
+  }
+  saveProg(); return n;
+}
 function normalize(p) {
   if (!p || !Array.isArray(p.days)) throw new Error('bad');
   return {
@@ -398,6 +413,7 @@ document.addEventListener('click', async ev => {
       const j = t.indexOf('#add='); if (j >= 0) { t = t.slice(j + 5); add = true; }
       const i = t.indexOf('#import='); if (i >= 0) t = t.slice(i + 8);
       const raw = t.startsWith('{') ? JSON.parse(t) : JSON.parse(b64ToStr(decodeURIComponent(t)));
+      if (raw.swap) { const n = await applySwap(raw.swap); alert(n ? n + ' hareket değiştirildi.' : 'Değiştirilecek hareket programında bulunamadı.'); return go('/'); }
       if (raw.append) add = true;
       const np = normalize(raw);
       if (add) { prog.days = prog.days.filter(x => !np.days.some(y => y.name === x.name)).concat(np.days); saveProg(); alert(np.days.length + ' gün programına eklendi.'); return go('/'); }
