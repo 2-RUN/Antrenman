@@ -400,7 +400,7 @@ document.addEventListener('click', async ev => {
       const raw = t.startsWith('{') ? JSON.parse(t) : JSON.parse(b64ToStr(decodeURIComponent(t)));
       if (raw.append) add = true;
       const np = normalize(raw);
-      if (add) { prog.days.push(...np.days); saveProg(); alert(np.days.length + ' gün programına eklendi.'); return go('/'); }
+      if (add) { prog.days = prog.days.filter(x => !np.days.some(y => y.name === x.name)).concat(np.days); saveProg(); alert(np.days.length + ' gün programına eklendi.'); return go('/'); }
       if (!confirm('Mevcut programın yerine bu program yüklensin mi?')) return;
       await replaceProgram(np); alert('Program yüklendi.'); go('/');
     } catch { alert('Program okunamadı. Bağlantı veya metin eksik/bozuk olabilir.'); }
@@ -424,7 +424,7 @@ window.addEventListener('hashchange', route);
     try {
       const np = normalize(JSON.parse(b64ToStr(decodeURIComponent(location.hash.slice(5)))));
       const n = np.days.reduce((a, d) => a + d.ex.length, 0);
-      if (confirm(`${np.days.length} gün, ${n} hareket programına eklensin mi?\nMevcut programın korunur.`)) { prog.days.push(...np.days); saveProg(); }
+      if (confirm(`${np.days.length} gün, ${n} hareket programına eklensin mi?\nMevcut programın korunur.`)) { prog.days = prog.days.filter(x => !np.days.some(y => y.name === x.name)).concat(np.days); saveProg(); }
     } catch { alert('Gelen bağlantı okunamadı.'); }
     history.replaceState(null, '', location.pathname);
     location.hash = '#/';
